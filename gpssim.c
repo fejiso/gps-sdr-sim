@@ -1650,6 +1650,7 @@ void usage(void)
 	printf("Usage: gps-sdr-sim [options]\n"
 		"Options:\n"
 		"  -e <gps_nav>     RINEX navigation file for GPS ephemerides (required)\n"
+		"  -x <gps_tle>     TLE trajectory projection file\n"
 		"  -u <user_motion> User motion file (dynamic mode)\n"
 		"  -g <nmea_gga>    NMEA GGA stream (dynamic mode)\n"
 		"  -l <location>    Lat,Lon,Hgt (static mode) e.g. 35.681298,139.766247,10.0\n"

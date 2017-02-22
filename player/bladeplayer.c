@@ -13,8 +13,8 @@
 #define TX_FREQUENCY    1575420000
 #define TX_SAMPLERATE   2600000
 #define TX_BANDWIDTH    2500000
-#define TX_VGA1         -25
-#define TX_VGA2         0
+#define TX_VGA1         -8
+#define TX_VGA2         20
 
 #define NUM_BUFFERS         32
 #define SAMPLES_PER_BUFFER  (32 * 1024)
@@ -264,7 +264,7 @@ int main(int argc, char *argv[])
 					}
 					// Check for errors
 					else if (ferror(fp)) {
-						status = errno;
+						status = -123;
 					}
 
 					break;

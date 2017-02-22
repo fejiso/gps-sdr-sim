@@ -1,0 +1,7 @@
+mkfifo lol
+tmux new-session -d -s GPS -n GPS "./gps-sdr-sim  -T `date -u +%Y/%m/%d,%H:%M:%S` -e brdc0380.17n -l 39.0254,125.7745,550.0 -v -o lol -d 30000"
+tmux new-window -a -d -t GPS -n 1 ./bladeplayer -f lol
+tmux new-window -a -d -t GPS -n 2 cgps -s
+
+tmux join-pane -s 1 -t 0 
+tmux join-pane -s 2 -t 0 
