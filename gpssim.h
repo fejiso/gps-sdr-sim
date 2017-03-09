@@ -11,7 +11,7 @@
 #define MAX_SAT (32)
 
 /*! \brief Maximum number of channels we simulate */
-#define MAX_CHAN (24)
+#define MAX_CHAN (8)
 
 /*! \brief Maximum number of user motion points */
 #define USER_MOTION_SIZE (300000) // max duration at 10Hz
