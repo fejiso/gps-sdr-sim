@@ -1,9 +1,9 @@
-set frequency tx 1575.42M
+set frequency tx 1075.42M
 set frequency rx 1555.42M
 set samplerate 2.6M
 set bandwidth 2.5M
-set txvga1 -35
-set txvga2 0
+set txvga1 -10
+set txvga2 10
 cal lms
 cal dc tx
 tx config file=/data/pyongyang.bin format=bin
