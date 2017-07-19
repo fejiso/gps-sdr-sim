@@ -5,7 +5,6 @@
 #include <string.h>
 #include <math.h>
 #include <time.h>
-#include <omp.h>
 #ifdef _WIN32
 #include "getopt.h"
 #else
@@ -1656,13 +1655,13 @@ void usage(void)
 		"  -l <location>    Lat,Lon,Hgt (static mode) e.g. 35.681298,139.766247,10.0\n"
 		"  -t <date,time>   Scenario start time YYYY/MM/DD,hh:mm:ss\n"
 		"  -T <date,time>   Overwrite TOC and TOE to scenario start time\n"
-		"  -d <duration>    Duration [sec] (max: %.0f)\n"
+		"  -d <duration>    Duration [sec] (dynamic mode max: %.0f, static mode max: %d)\n"
 		"  -o <output>      I/Q sampling data file (default: gpssim.bin)\n"
 		"  -s <frequency>   Sampling frequency [Hz] (default: 2600000)\n"
 		"  -b <iq_bits>     I/Q data format [1/8/16] (default: 16)\n"
 		"  -i               Disable ionospheric delay for spacecraft scenario\n"
 		"  -v               Show details about simulated channels\n",
-		((double)USER_MOTION_SIZE)/10.0);
+		((double)USER_MOTION_SIZE) / 10.0, STATIC_MAX_DURATION);
 
 	return;
 }
@@ -1741,6 +1740,7 @@ int main(int argc, char *argv[])
 	data_format = SC16;
 	g0.week = -1; // Invalid start time
 	iduration = USER_MOTION_SIZE;
+	duration = (double)iduration/10.0; // Default duration
 	verb = FALSE;
 	ionoutc.enable = TRUE;
 
@@ -1826,12 +1826,6 @@ int main(int argc, char *argv[])
 			break;
 		case 'd':
 			duration = atof(optarg);
-			if (duration<0.0 || duration>((double)USER_MOTION_SIZE)/10.0)
-			{
-				printf("ERROR: Invalid duration.\n");
-				exit(1);
-			}
-			iduration = (int)(duration*10.0+0.5);
 			break;
 		case 'i':
 			ionoutc.enable = FALSE; // Disable ionospheric correction
@@ -1862,6 +1856,13 @@ int main(int argc, char *argv[])
 		llh[1] = 139.766247 / R2D;
 		llh[2] = 10.0;
 	}
+
+	if (duration<0.0 || (duration>((double)USER_MOTION_SIZE)/10.0 && !staticLocationMode) || (duration>STATIC_MAX_DURATION && staticLocationMode))
+	{
+		printf("ERROR: Invalid duration.\n");
+		exit(1);
+	}
+	iduration = (int)(duration*10.0 + 0.5);
 
 	// Buffer size	
 	samp_freq = floor(samp_freq/10.0);
@@ -1905,13 +1906,6 @@ int main(int argc, char *argv[])
 		llh2xyz(llh,xyz[0]); // Convert llh to xyz
 
 		numd = iduration;
-		
-		for (iumd=1; iumd<numd; iumd++)
-		{
-			xyz[iumd][0] = xyz[0][0];
-			xyz[iumd][1] = xyz[0][1];
-			xyz[iumd][2] = xyz[0][2];
-		}
 	}
 /*
 	printf("xyz = %11.1f, %11.1f, %11.1f\n", xyz[0][0], xyz[0][1], xyz[0][2]);
@@ -1950,6 +1944,14 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	gmax.sec = 0;
+	gmax.week = 0;
+	tmax.sec = 0;
+	tmax.mm = 0;
+	tmax.hh = 0;
+	tmax.d = 0;
+	tmax.m = 0;
+	tmax.y = 0;
 	for (sv=0; sv<MAX_SAT; sv++)
 	{
 		if (eph[neph-1][sv].vflg == 1)
@@ -2142,7 +2144,11 @@ int main(int argc, char *argv[])
 				sv = chan[i].prn-1;
 
 				// Current pseudorange
-				computeRange(&rho, eph[ieph][sv], &ionoutc, grx, xyz[iumd]);
+				if (!staticLocationMode)
+					computeRange(&rho, eph[ieph][sv], &ionoutc, grx, xyz[iumd]);
+				else
+					computeRange(&rho, eph[ieph][sv], &ionoutc, grx, xyz[0]);
+
 				chan[i].azel[0] = rho.azel[0];
 				chan[i].azel[1] = rho.azel[1];
 
@@ -2158,7 +2164,7 @@ int main(int argc, char *argv[])
 				ant_gain = ant_pat[ibs];
 
 				// Signal gain
-				gain[i] = (int)(path_loss*ant_gain*100.0); // scaled by 100
+				gain[i] = (int)(path_loss*ant_gain*128.0); // scaled by 2^7
 			}
 		}
 
@@ -2176,8 +2182,9 @@ int main(int argc, char *argv[])
 					ip = chan[i].dataBit * chan[i].codeCA * cosTable512[iTable] * gain[i];
 					qp = chan[i].dataBit * chan[i].codeCA * sinTable512[iTable] * gain[i];
 
-					i_acc += (ip + 50)/100;
-					q_acc += (qp + 50)/100;
+					// Accumulate for all visible satellites
+					i_acc += ip;
+					q_acc += qp;
 
 					// Update code phase
 					chan[i].code_phase += chan[i].f_code * delt;
@@ -2216,11 +2223,14 @@ int main(int argc, char *argv[])
 				}
 			}
 
+			// Scaled by 2^7
+			i_acc = (i_acc+64)>>7;
+			q_acc = (q_acc+64)>>7;
+
 			// Store I/Q samples into buffer
 			iq_buff[isamp*2] = (short)i_acc;
 			iq_buff[isamp*2+1] = (short)q_acc;
-
-		} // End of omp parallel for
+		}
 
 		if (data_format==SC01)
 		{
@@ -2243,10 +2253,6 @@ int main(int argc, char *argv[])
 		} 
 		else // data_format==SC16
 		{
-			/*
-			for (isamp=0; isamp<2*iq_buff_size; isamp++)
-				iq_buff[isamp] = iq_buff[isamp]>0?1000:-1000; // Emulated 1-bit I/Q
-			*/
 			fwrite(iq_buff, 2, 2*iq_buff_size, fp);
 		}
 
@@ -2289,7 +2295,10 @@ int main(int argc, char *argv[])
 			}
 
 			// Update channel allocation
-			allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[iumd], elvmask);
+			if (!staticLocationMode)
+				allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[iumd], elvmask);
+			else
+				allocateChannel(chan, eph[ieph], ionoutc, grx, xyz[0], elvmask);
 
 			// Show ditails about simulated channels
 			if (verb==TRUE)
